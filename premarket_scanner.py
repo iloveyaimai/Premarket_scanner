@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time as _time
 from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -211,19 +212,28 @@ def send_telegram(messages: list[str]) -> bool:
         print("Telegram skipped: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.", file=sys.stderr)
         return False
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    try:
-        for text in messages:
-            r = requests.post(
-                url,
-                json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML",
-                      "disable_web_page_preview": True},
-                timeout=15,
-            )
-            r.raise_for_status()
-        return True
-    except Exception as e:
-        print(f"Telegram error: {e}", file=sys.stderr)
-        return False
+    for text in messages:
+        for attempt in range(1, 5):  # retry: Telegram's API is sometimes slow
+            try:
+                r = requests.post(
+                    url,
+                    json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML",
+                          "disable_web_page_preview": True},
+                    timeout=30,
+                )
+                r.raise_for_status()
+                break
+            except Exception as e:
+                # Never print the exception for HTTP errors: it contains the URL (token).
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                msg = f"HTTP {status}" if status else type(e).__name__
+                print(f"Telegram attempt {attempt}/4 failed: {msg}", file=sys.stderr)
+                if status in (400, 401, 403, 404):  # wrong token/chat: retrying won't help
+                    return False
+                if attempt == 4:
+                    return False
+                _time.sleep(5 * attempt)
+    return True
 
 
 # ------------------------------------------------------- Storage / main ----
