@@ -15,7 +15,8 @@ Output : console + results/scan_YYYY-MM-DD.json (all runs of the day) + Telegram
 Setup  : pip install yfinance requests pandas
 Env    : BENZINGA_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
          FOREX_MIN_MOVE_PCT (default 0.5), SCANNER_OUT_DIR (default results)
-Run    : python premarket_scanner.py [--mode auto|premarket|live]
+Run    : python premarket_scanner.py [--mode auto|premarket|live|test]
+         (test = just send a Telegram test message, works any day)
 """
 import argparse
 import html
@@ -266,8 +267,13 @@ def print_report(stocks: list[dict], forex: list[dict], label: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["auto", "premarket", "live"], default="auto")
+    ap.add_argument("--mode", choices=["auto", "premarket", "live", "test"], default="auto")
     args = ap.parse_args()
+
+    if args.mode == "test":
+        ok = send_telegram(["✅ <b>Scanner test</b>\nTelegram connection works."])
+        print("Test message sent." if ok else "Test message FAILED.")
+        sys.exit(0 if ok else 1)
 
     now = datetime.now(ET)
     if now.weekday() >= 5:
