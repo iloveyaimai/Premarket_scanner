@@ -1,0 +1,57 @@
+# Save as: .github/workflows/scan.yml
+# Triggered from cron-job.org via the GitHub API (workflow_dispatch),
+# because GitHub's own `schedule` trigger can run hours late or be skipped.
+name: scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "auto | premarket | live"
+        default: "auto"
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Today's date in New York time (used as the cache key)
+      - id: d
+        run: echo "date=$(TZ=America/New_York date +%F)" >> "$GITHUB_OUTPUT"
+
+      # Runners are wiped after every run, so keep the day's results file
+      # between runs. This is what stops the same stock being alerted twice.
+      - uses: actions/cache@v4
+        with:
+          path: results
+          key: scan-${{ steps.d.outputs.date }}-${{ github.run_id }}
+          restore-keys: scan-${{ steps.d.outputs.date }}-
+
+      - name: Run scanner
+        env:
+          MODE: ${{ inputs.mode || 'auto' }}
+          BENZINGA_API_KEY: ${{ secrets.BENZINGA_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python premarket_scanner.py --mode "$MODE"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scan-results-${{ github.run_id }}
+          path: results/
+          retention-days: 14
+          if-no-files-found: ignore
